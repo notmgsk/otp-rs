@@ -1,0 +1,16 @@
+[package]
+name = "otp"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+hex-literal = "0.4.1"
+hmac = "0.12.1"
+sha1 = "0.10.5"
+thiserror = "1.0.40"
+
+[dev-dependencies]
+hex = "0.4.3"
+test-case = "3.1.0"
