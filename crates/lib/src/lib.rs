@@ -1,49 +1,59 @@
-use hmac::{digest::InvalidLength, Mac};
+//! HMAC-based one-time passcodes
+//!
+//! Provides implementations for both IETF RFCs:
+//! * [4226](https://datatracker.ietf.org/doc/html/rfc4226): simple incrementing counter (HOTP)
+//! * [6238](https://datatracker.ietf.org/doc/html/rfc6238): time-based counter (TOTP)
+//!
+//! Custom HMAC-based one-time passcodes can be provided
+//! by types implementing the [`ToBytes`] trait.
 
-type Sha1Hmac = hmac::Hmac<sha1::Sha1>;
+mod hotp;
+mod totp;
+pub use hotp::Hotp;
+pub use totp::Totp;
+
+use hmac::{digest::InvalidLength, Mac};
 
 #[derive(Debug, thiserror::Error)]
 pub enum HotpError {
     #[error("error when computing HMAC")]
-    HmacError(#[from] InvalidLength),
+    InvalidLength(#[from] InvalidLength),
+    #[error("error when getting bytes for HMAC input: {err}")]
+    InputBytes { err: String },
 }
 
-pub type Result<T> = std::result::Result<T, HotpError>;
+pub type OtpResult<T> = std::result::Result<T, HotpError>;
 
-pub struct Hotp {
-    counter: u64,
+/// Trait used to provide bytes as input to the HMAC algorithm.
+pub trait ToBytes {
+    fn to_bytes(&mut self) -> OtpResult<[u8; 8]>;
+}
+
+/// One-time passcodes.
+///
+/// See [`Hotp`] and [`Totp`].
+pub struct Otp<G: ToBytes> {
     key: String,
-    len: u32,
+    generator: G,
+    digits: u32,
 }
 
-impl Hotp {
-    pub fn new(key: String, counter: u64, len: u32) -> Self {
-        Self { counter, key, len }
-    }
-
-    pub fn get_value(&mut self) -> Result<u32> {
-        // Step 1: Generate an HMAC-SHA-1 value
-        let hs = hmac(self.key.clone(), self.counter)?;
-
-        // Step 2: Generate a 4-byte string (Dynamic Truncation)
+impl<G: ToBytes> Otp<G> {
+    /// Generate a one-time passcode
+    pub fn get(&mut self) -> OtpResult<u32> {
+        let c = self.generator.to_bytes()?;
+        let hs = hmac(self.key.clone(), &c)?;
         let sbits = dt(&hs);
-
-        //   Step 3: Compute an HOTP value
         let snum = u32::from_be_bytes(sbits);
-
-        self.increment_counter();
-
-        Ok(snum % 10_u32.pow(self.len))
-    }
-
-    fn increment_counter(&mut self) {
-        self.counter += 1;
+        Ok(snum % 10_u32.pow(self.digits))
     }
 }
 
-fn hmac(key: String, counter: u64) -> Result<[u8; 20]> {
+type Sha1Hmac = hmac::Hmac<sha1::Sha1>;
+
+fn hmac(key: String, counter: &[u8]) -> OtpResult<[u8; 20]> {
     let mut mac = Sha1Hmac::new_from_slice(key.as_bytes())?;
-    mac.update(&counter.to_be_bytes());
+    mac.update(counter);
     Ok(mac.finalize().into_bytes().into())
 }
 
@@ -65,11 +75,10 @@ fn dt_offset(hs: &[u8; 20]) -> u8 {
 
 #[cfg(test)]
 mod test {
-    use hex::{FromHex, ToHex};
-    use hmac::Mac;
+    use hex::FromHex;
     use test_case::test_case;
 
-    use crate::{dt, dt_offset, dt_substr, hmac, Hotp};
+    use crate::{dt, dt_offset, dt_substr, hmac};
 
     #[test]
     fn it_computes_correct_offset() {
@@ -109,40 +118,7 @@ mod test {
     fn it_computes_correct_hmac(counter: u64, expected: &str) {
         let expected = <[u8; 20]>::from_hex(expected).unwrap();
         let key = "12345678901234567890".to_string();
-        let hmac = hmac(key, counter).unwrap();
+        let hmac = hmac(key, &counter.to_be_bytes()).unwrap();
         assert_eq!(hmac, expected);
-    }
-
-    #[test_case(0, 755224)]
-    #[test_case(1, 287082)]
-    #[test_case(2, 359152)]
-    #[test_case(3, 969429)]
-    #[test_case(4, 338314)]
-    #[test_case(5, 254676)]
-    #[test_case(6, 287922)]
-    #[test_case(7, 162583)]
-    #[test_case(8, 399871)]
-    #[test_case(9, 520489)]
-    fn it_computes_correct_hotp(counter: u64, expected: u32) {
-        let key = "12345678901234567890".to_string();
-        let digits = 6;
-        let mut htop = Hotp::new(key, counter, digits);
-        let actual = htop.get_value().unwrap();
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn it_increments_the_counter() {
-        let cases = vec![
-            755224, 287082, 359152, 969429, 338314, 254676, 287922, 162583, 399871, 520489,
-        ];
-        let key = "12345678901234567890".to_string();
-        let digits = 6;
-        let counter = 0;
-        let mut htop = Hotp::new(key, counter, digits);
-        for case in cases {
-            let actual = htop.get_value().unwrap();
-            assert_eq!(actual, case);
-        }
     }
 }

@@ -1,7 +1,12 @@
 [package]
-name = "otp"
-version = "0.1.0"
+name = "otp2"
+version = "0.0.1"
 edition = "2021"
+license = "MIT"
+description = "Provides both HOTP and TOTP implementations of one-time passcodes"
+homepage = "https://github.com/notmgsk/otp-rs"
+repository = "https://github.com/notmgsk/otp-rs"
+keywords = ["authentication", "auth", "otp", "hotp", "totp"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -10,6 +15,7 @@ hex-literal = "0.4.1"
 hmac = "0.12.1"
 sha1 = "0.10.5"
 thiserror = "1.0.40"
+unix-time = "0.1.5"
 
 [dev-dependencies]
 hex = "0.4.3"
